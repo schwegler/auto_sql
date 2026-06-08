@@ -1,0 +1,75 @@
+name: Build and Deploy to Local SQL Server
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Database Project
+    runs-on: windows-latest # Build on Windows to ensure MSBuild and SDK targets are resolved correctly
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build SQL Database Project
+        run: dotnet build src/Database/Database.sqlproj -c Release
+
+      - name: Upload DACPAC Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-dacpac
+          path: src/Database/bin/Release/Database.dacpac
+
+  deploy-local:
+    name: Deploy to Local SQL Server
+    runs-on: self-hosted # Requires a self-hosted runner with network access to local SQL Server
+    needs: build
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download DACPAC Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: database-dacpac
+          path: ./dacpac
+
+      # Deploy server-level configurations (logins, server roles, linked servers) before database schema
+      - name: Deploy Pre-Deployment Server Configurations
+        run: |
+          sqlcmd -S "${{ secrets.LOCAL_SQL_SERVER }}" `
+            -U "${{ secrets.LOCAL_SQL_USER }}" `
+            -P "${{ secrets.LOCAL_SQL_PASSWORD }}" `
+            -i ".\src\Database\Security\PreDeployment-ServerConfig.sql" `
+            -C
+        shell: powershell
+
+      # Deploy using SqlPackage utility on the local runner.
+      - name: Deploy DACPAC via SqlPackage
+        run: |
+          sqlpackage /Action:Publish `
+            /SourceFile:".\dacpac\Database.dacpac" `
+            /TargetServerName:"${{ secrets.LOCAL_SQL_SERVER }}" `
+            /TargetDatabaseName:"${{ secrets.LOCAL_SQL_DATABASE }}" `
+            /TargetUser:"${{ secrets.LOCAL_SQL_USER }}" `
+            /TargetPassword:"${{ secrets.LOCAL_SQL_PASSWORD }}" `
+            /Variables:AllowIncompatiblePlatform=true
+        shell: powershell
+
+      # Execute database unit tests (TDD verification)
+      - name: Run Database Unit Tests
+        run: |
+          sqlcmd -S "${{ secrets.LOCAL_SQL_SERVER }}" `
+            -d "${{ secrets.LOCAL_SQL_DATABASE }}" `
+            -U "${{ secrets.LOCAL_SQL_USER }}" `
+            -P "${{ secrets.LOCAL_SQL_PASSWORD }}" `
+            -Q "EXEC [tests].[RunTests];" `
+            -C
+        shell: powershell

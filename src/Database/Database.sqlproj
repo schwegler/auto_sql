@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build">
+  <Sdk Name="Microsoft.Build.Sql" Version="0.2.0-preview" />
+  <PropertyGroup>
+    <Name>Database</Name>
+    <DSP>Microsoft.Data.Tools.Schema.Sql.Sql160DatabaseSchemaProvider</DSP>
+    <ModelCollation>1033, CI</ModelCollation>
+    <ProjectGuid>{6159979C-BF4A-4563-B733-48ACAA39125D}</ProjectGuid>
+    
+    <IncludeMasterDatabaseReference>True</IncludeMasterDatabaseReference>
+  </PropertyGroup>
+  <ItemGroup>
+    <PreDeploy Include="Security/PreDeployment-ServerConfig.sql" />
+    <PostDeploy Include="Script.PostDeployment.sql" />
+    <PackageReference Include="Microsoft.SqlServer.Dacpacs.Master" Version="160.0.0" DatabaseVariableLiteralValue="master" />
+  </ItemGroup>
+</Project>

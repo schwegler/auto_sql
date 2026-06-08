@@ -1,0 +1,46 @@
+name: CI Schema and Unit Test Validation
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  validate-pr:
+    name: Build & Run Stored Procedure Tests
+    runs-on: windows-2025 # Windows runner contains pre-installed SQL LocalDB and SqlPackage
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET Core SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+
+      - name: Install SqlPackage
+        run: dotnet tool install --global Microsoft.SqlPackage
+
+      - name: Build Database Project
+        run: dotnet build src/Database/Database.sqlproj -c Release
+
+      - name: Publish DACPAC to LocalDB
+        run: |
+          SqlPackage.exe /Action:Publish /SourceFile:src/Database/bin/Release/Database.dacpac /TargetServerName:"(localdb)\MSSQLLocalDB" /TargetDatabaseName:"PR_Validation_DB" /p:AllowIncompatiblePlatform=true /p:ExcludeObjectTypes="Users;Logins;RoleMembership" /p:IgnorePermissions=true
+
+      - name: Enable OLE Automation Procedures
+        run: |
+          sqlcmd -S "(localdb)\MSSQLLocalDB" -Q "EXEC sp_configure 'show advanced options', 1; RECONFIGURE; EXEC sp_configure 'Ole Automation Procedures', 1; RECONFIGURE;"
+
+      - name: Run Stored Procedure Tests
+        run: |
+          sqlcmd -b -S "(localdb)\MSSQLLocalDB" -d "PR_Validation_DB" -Q "EXEC [tests].[RunTests];"
+
+      - name: Execute T-SQL Unit Tests
+        run: |
+          sqlcmd -S "(localdb)\MSSQLLocalDB" -d "PR_Validation_DB" -Q "EXEC [tests].[RunTests];"

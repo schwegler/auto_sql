@@ -1,0 +1,1 @@
+CREATE USER [CORP\AppDomainGroup] FOR LOGIN [CORP\AppDomainGroup];

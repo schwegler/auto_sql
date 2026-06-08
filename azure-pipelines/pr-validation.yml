@@ -1,0 +1,42 @@
+trigger: none # Do not trigger on direct commits
+
+# Trigger on Pull Requests to the main branch
+pr:
+  branches:
+    include:
+      - main
+
+jobs:
+  - job: ValidatePR
+    displayName: 'Build and Run Unit Tests on Agent'
+    pool:
+      name: 'Default' # Runs on your free self-hosted Windows agent to bypass parallelism grant limits
+    steps:
+      - task: UseDotNet@2
+        displayName: 'Install .NET SDK'
+        inputs:
+          packageType: 'sdk'
+          version: '8.x'
+
+      - task: DotNetCoreCLI@2
+        displayName: 'Build Database Project'
+        inputs:
+          command: 'build'
+          projects: 'src/Database/Database.sqlproj'
+          arguments: '-c Release'
+
+      # Deploy the compiled DACPAC directly to LocalDB using SqlPackage.exe (built-in on Windows agent)
+      - task: PowerShell@2
+        displayName: 'Deploy Schema to LocalDB'
+        inputs:
+          targetType: 'inline'
+          script: |
+            SqlPackage.exe /Action:Publish /SourceFile:"$(System.DefaultWorkingDirectory)/src/Database/bin/Release/Database.dacpac" /TargetServerName:"(localdb)\MSSQLLocalDB" /TargetDatabaseName:"PR_Validation_DB" /v:AllowIncompatiblePlatform=true
+
+      # Run the test runner using sqlcmd.exe (built-in on Windows agent)
+      - task: PowerShell@2
+        displayName: 'Execute T-SQL Unit Tests'
+        inputs:
+          targetType: 'inline'
+          script: |
+            sqlcmd.exe -S "(localdb)\MSSQLLocalDB" -d "PR_Validation_DB" -Q "EXEC [tests].[RunTests];"

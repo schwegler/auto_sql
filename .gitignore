@@ -1,0 +1,21 @@
+# Visual Studio / MSBuild / .NET
+[Bb]in/
+[Oo]bj/
+*.suo
+*.user
+*.sln.docstates
+*.sqlproj.user
+
+# Visual Studio Code
+.vscode/
+
+# Local SQL Server Container Volume (if any)
+mssql_data/
+
+# DACPAC and build artifacts (compiled schemas should not be committed)
+*.dacpac
+*.publish.xml
+
+# OS generated files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,95 @@
+trigger:
+  - main
+
+pool:
+  vmImage: 'windows-latest' # Windows agent includes dotnet, Azure CLI, and SqlPackage pre-installed
+
+variables:
+  # Connection details are pulled from pipeline variables/secrets
+  azureServiceConnection: 'MyAzureServiceConnection'
+  resourceGroupName: 'rg-auto-sql-poc'
+  location: 'eastus'
+  sqlServerName: 'auto-sql-poc-srv'
+  databaseName: 'auto-sql-poc-db'
+  sqlAdminUser: 'sqladmin'
+
+stages:
+  - stage: Build
+    jobs:
+      - job: BuildDatabase
+        steps:
+          - task: UseDotNet@2
+            inputs:
+              packageType: 'sdk'
+              version: '8.x'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Build SQL Database Project'
+            inputs:
+              command: 'build'
+              projects: 'src/Database/Database.sqlproj'
+              arguments: '-c Release'
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish DACPAC Artifact'
+            inputs:
+              PathtoPublish: 'src/Database/bin/Release/Database.dacpac'
+              ArtifactName: 'dacpac'
+              publishLocation: 'Container'
+
+  - stage: Deploy
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - job: DeployInfrastructureAndDatabase
+        steps:
+          - task: DownloadBuildArtifacts@1
+            displayName: 'Download DACPAC Artifact'
+            inputs:
+              buildType: 'current'
+              downloadType: 'single'
+              artifactName: 'dacpac'
+              downloadPath: '$(System.ArtifactsDirectory)'
+
+          - task: AzureResourceManagerTemplateDeployment@3
+            displayName: 'Deploy Bicep Infrastructure'
+            inputs:
+              deploymentScope: 'Resource Group'
+              azureResourceManagerConnection: '$(azureServiceConnection)'
+              subscriptionId: '$(AZURE_SUBSCRIPTION_ID)' # Configured in pipeline variables
+              action: 'Create Or Update Resource Group'
+              resourceGroupName: '$(resourceGroupName)'
+              location: '$(location)'
+              templateLocation: 'Linked artifact'
+              csmFile: 'infra/azure/main.bicep'
+              csmParametersFile: 'infra/azure/main.parameters.json'
+              overrideParameters: '-administratorLoginPassword $(SQL_ADMIN_PASSWORD) -sqlServerName $(sqlServerName) -databaseName $(databaseName) -administratorLogin $(sqlAdminUser)'
+              deploymentMode: 'Incremental'
+
+          - task: SqlAzureDacpacDeployment@1
+            displayName: 'Deploy DACPAC Schema'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              AuthenticationType: 'server'
+              ServerName: '$(sqlServerName).database.windows.net'
+              DatabaseName: '$(databaseName)'
+              SqlUsername: '$(sqlAdminUser)'
+              SqlPassword: '$(SQL_ADMIN_PASSWORD)'
+              deployType: 'DacpacTask'
+              DeploymentAction: 'Publish'
+              DacpacFile: '$(System.ArtifactsDirectory)/dacpac/Database.dacpac'
+              IpDetectionMethod: 'AutoDetect'
+              AdditionalArguments: '/p:ExcludeObjectTypes=Users;RoleMemberships'
+
+          - task: SqlAzureDacpacDeployment@1
+            displayName: 'Run Database Unit Tests'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              AuthenticationType: 'server'
+              ServerName: '$(sqlServerName).database.windows.net'
+              DatabaseName: '$(databaseName)'
+              SqlUsername: '$(sqlAdminUser)'
+              SqlPassword: '$(SQL_ADMIN_PASSWORD)'
+              deployType: 'SqlTask'
+              SqlInline: 'EXEC [tests].[RunTests];'
+              IpDetectionMethod: 'AutoDetect'

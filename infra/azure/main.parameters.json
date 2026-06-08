@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "sqlServerName": {
+      "value": "auto-sql-poc-srv"
+    },
+    "databaseName": {
+      "value": "auto-sql-poc-db"
+    },
+    "administratorLogin": {
+      "value": "sqladmin"
+    },
+    "databaseSkuName": {
+      "value": "Basic"
+    },
+    "databaseSkuTier": {
+      "value": "Basic"
+    },
+    "databaseSkuCapacity": {
+      "value": 5
+    }
+  }
+}

@@ -1,0 +1,94 @@
+trigger:
+  - main
+
+variables:
+  # Connection details pulled from pipeline variables/secrets.
+  # Assumes an existing, pre-installed SQL Server target is reachable by the agent.
+  sqlServerName: 'localhost' # or local network name (e.g. '192.168.1.50')
+  databaseName: 'local-customers-db'
+  sqlUser: 'sa'
+
+stages:
+  - stage: Build
+    jobs:
+      - job: BuildDatabase
+        pool:
+          vmImage: 'windows-latest'
+        steps:
+          - task: UseDotNet@2
+            inputs:
+              packageType: 'sdk'
+              version: '8.x'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Build SQL Database Project'
+            inputs:
+              command: 'build'
+              projects: 'src/Database/Database.sqlproj'
+              arguments: '-c Release'
+
+          - task: CopyFiles@2
+            displayName: 'Copy Deploy Files to Staging'
+            inputs:
+              SourceFolder: '$(System.DefaultWorkingDirectory)'
+              Contents: |
+                src/Database/bin/Release/Database.dacpac
+                src/Database/Security/PreDeployment-ServerConfig.sql
+              TargetFolder: '$(Build.ArtifactStagingDirectory)'
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Build Artifacts'
+            inputs:
+              PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+              ArtifactName: 'database-artifacts'
+              publishLocation: 'Container'
+
+  - stage: Deploy
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - job: DeployLocalDatabase
+        pool:
+          name: 'Default' # Name of your self-hosted agent pool
+          demands:
+            - Agent.OS -equals Windows_NT # Typically run on Windows self-hosted agent
+        steps:
+          - task: DownloadBuildArtifacts@1
+            displayName: 'Download Database Artifacts'
+            inputs:
+              buildType: 'current'
+              downloadType: 'single'
+              artifactName: 'database-artifacts'
+              downloadPath: '$(System.ArtifactsDirectory)'
+
+          - task: SqlDacpacDeployment@1
+            displayName: 'Deploy Pre-Deployment Server Configurations'
+            inputs:
+              ServerName: '$(sqlServerName)'
+              DatabaseName: 'master'
+              SqlUsername: '$(sqlUser)'
+              SqlPassword: '$(SQL_PASSWORD)'
+              deployType: 'SqlTask'
+              SqlFile: '$(System.ArtifactsDirectory)/database-artifacts/src/Database/Security/PreDeployment-ServerConfig.sql'
+
+          - task: SqlDacpacDeployment@1
+            displayName: 'Deploy DACPAC to Local SQL Server'
+            inputs:
+              ServerName: '$(sqlServerName)'
+              DatabaseName: '$(databaseName)'
+              SqlUsername: '$(sqlUser)'
+              SqlPassword: '$(SQL_PASSWORD)' # Secure pipeline variable
+              deployType: 'DacpacTask'
+              DeploymentAction: 'Publish'
+              DacpacFile: '$(System.ArtifactsDirectory)/database-artifacts/src/Database/bin/Release/Database.dacpac'
+              AdditionalArguments: '/v:AllowIncompatiblePlatform=true'
+
+          - task: SqlDacpacDeployment@1
+            displayName: 'Run Database Unit Tests'
+            inputs:
+              ServerName: '$(sqlServerName)'
+              DatabaseName: '$(databaseName)'
+              SqlUsername: '$(sqlUser)'
+              SqlPassword: '$(SQL_PASSWORD)'
+              deployType: 'SqlTask'
+              SqlInline: 'EXEC [tests].[RunTests];'
