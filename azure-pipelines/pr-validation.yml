@@ -1,4 +1,7 @@
-trigger: none # Do not trigger on direct commits
+trigger:
+  branches:
+    include:
+      - main
 
 # Trigger on Pull Requests to the main branch
 pr:
@@ -10,7 +13,8 @@ jobs:
   - job: ValidatePR
     displayName: 'Build and Run Unit Tests on Agent'
     pool:
-      name: 'Default' # Runs on your free self-hosted Windows agent to bypass parallelism grant limits
+      vmImage: 'windows-latest' # Runs on Microsoft-hosted Windows agent (has LocalDB & SqlPackage pre-installed)
+      # name: 'Default' # Uncomment this and comment out vmImage if you prefer your self-hosted agent pool
     steps:
       - task: UseDotNet@2
         displayName: 'Install .NET SDK'
@@ -31,12 +35,22 @@ jobs:
         inputs:
           targetType: 'inline'
           script: |
-            SqlPackage.exe /Action:Publish /SourceFile:"$(System.DefaultWorkingDirectory)/src/Database/bin/Release/Database.dacpac" /TargetServerName:"(localdb)\MSSQLLocalDB" /TargetDatabaseName:"PR_Validation_DB" /v:AllowIncompatiblePlatform=true
+            SqlPackage.exe /Action:Publish /SourceFile:"$(System.DefaultWorkingDirectory)/src/Database/bin/Release/Database.dacpac" /TargetServerName:"(localdb)\MSSQLLocalDB" /TargetDatabaseName:"PR_Validation_DB" /p:AllowIncompatiblePlatform=true /p:ExcludeObjectTypes="Users;Logins;RoleMembership" /p:IgnorePermissions=true
+
+      # Enable OLE Automation Procedures (required for tests writing files via Scripting.FileSystemObject)
+      - task: PowerShell@2
+        displayName: 'Enable OLE Automation Procedures'
+        inputs:
+          targetType: 'inline'
+          script: |
+            sqlcmd.exe -S "(localdb)\MSSQLLocalDB" -Q "EXEC sp_configure 'show advanced options', 1; RECONFIGURE; EXEC sp_configure 'Ole Automation Procedures', 1; RECONFIGURE;"
 
       # Run the test runner using sqlcmd.exe (built-in on Windows agent)
+      # The -b flag ensures that sqlcmd exits with a non-zero code if the test suite raises a SQL error.
       - task: PowerShell@2
         displayName: 'Execute T-SQL Unit Tests'
         inputs:
           targetType: 'inline'
           script: |
-            sqlcmd.exe -S "(localdb)\MSSQLLocalDB" -d "PR_Validation_DB" -Q "EXEC [tests].[RunTests];"
+            sqlcmd.exe -b -S "(localdb)\MSSQLLocalDB" -d "PR_Validation_DB" -Q "EXEC [tests].[RunTests];"
+
