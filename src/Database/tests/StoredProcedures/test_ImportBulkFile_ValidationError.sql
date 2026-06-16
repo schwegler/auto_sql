@@ -20,23 +20,23 @@ BEGIN
         (RecordText)
     VALUES
         -- Account 1: Count mismatch (2 employee detail records, but trailer reports 1)
+        -- Wages match (500 + 1000 = 1500), balance is correct (1500 - 0 = 1500)
         ('E0925000000000OWJAMES LLC             0000000001                                '),
         ('S000000001OWEN                JAMES    09250000500000000000001                  '),
         ('S000000002WINKLES             PATRICIA 09250001000000000000001                  '),
-        ('T0000001000000015000000000000000000000001500000000000000000000                  '),
-        -- Trailer count = 1, wages = 150.00
+        ('T000000100000001500000000000000000000000015000000000000000000                   '),
 
-        -- Account 2: Wage sum mismatch (parsed sum is 100.00, but trailer reports 120.00)
+        -- Account 2: Wage sum mismatch (parsed sum is 1000.00, but trailer reports 1200.00)
+        -- Count matches (1), balance is correct (1200 - 0 = 1200)
         ('E0925000000000Alabama Property Managem0000000002                                '),
         ('S000000003WINKLES             ISAAC    09250001000000000000002                  '),
-        ('T0000001000000012000000000000000000000001200000000000000000000                  '),
-        -- Trailer wages = 120.00
+        ('T000000100000001200000000000000000000000012000000000000000000                   '),
 
-        -- Account 3: Balance mismatch (Wages 100.00, Excess 10.00, Taxable 80.00 -> 100 - 10 <> 80)
+        -- Account 3: Balance mismatch (Wages 1000.00, Excess 100.00, Taxable 800.00 -> 1000 - 100 = 900 <> 800)
+        -- Count matches (1), wages match (1000)
         ('E0925000000000Ivaldi Engineering PLLC 0000000003                                '),
         ('S000000004TORRES              JOHNATHAN09250001000000000000003                  '),
-        ('T0000001000000010000000000001000000000008000000000000000000000                  ');
-    -- Total 100, Excess 10, Taxable 80
+        ('T000000100000001000000000000010000000000008000000000000000000                   ');
 
     -- 2. Act: Execute the parser
     EXEC [dbo].[ParseBulkFile] @BatchId = @BatchId;
