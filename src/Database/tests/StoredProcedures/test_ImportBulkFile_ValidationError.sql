@@ -49,70 +49,72 @@ BEGIN
     WHERE [BatchId] = @BatchId AND [Status] = 'Rejected';
     IF @RejectedCount <> 4
     BEGIN
-    THROW 50201, 'Assertion failed: Expected all 4 records to be staged as Rejected.', 1;
-END;
+        THROW 50201, 'Assertion failed: Expected all 4 records to be staged as Rejected.', 1;
+    END;
 
-SELECT @PendingCount = COUNT(*)
-FROM [dbo].[BulkImportQueue]
-WHERE [BatchId] = @BatchId AND [Status] = 'Pending';
-IF @PendingCount <> 0
+    SELECT @PendingCount = COUNT(*)
+    FROM [dbo].[BulkImportQueue]
+    WHERE [BatchId] = @BatchId AND [Status] = 'Pending';
+    IF @PendingCount <> 0
     BEGIN
-THROW 50202, 'Assertion failed: Expected 0 records to be staged as Pending.', 1;
-END;
+        THROW 50202, 'Assertion failed: Expected 0 records to be staged as Pending.', 1;
+    END;
 
--- Verify that 3 distinct validation error logs were recorded
-SELECT @LoggedErrors = COUNT(*)
-FROM [dbo].[BulkProcessErrors]
-WHERE [BatchId] = @BatchId;
-IF @LoggedErrors <> 3
+    -- Verify that 3 distinct validation error logs were recorded
+    SELECT @LoggedErrors = COUNT(*)
+    FROM [dbo].[BulkProcessErrors]
+    WHERE [BatchId] = @BatchId;
+    IF @LoggedErrors <> 3
     BEGIN
-THROW 50203, 'Assertion failed: Expected exactly 3 errors to be logged in BulkProcessErrors.', 1;
-END;
+        THROW 50203, 'Assertion failed: Expected exactly 3 errors to be logged in BulkProcessErrors.', 1;
+    END;
 
--- Verify error messages correspond to expected validations
-IF NOT EXISTS (SELECT 1
-FROM [dbo].[BulkProcessErrors]
-WHERE [BatchId] = @BatchId AND [ErrorMessage] LIKE '%Validation Mismatch (960)%')
+    -- Verify error messages correspond to expected validations
+    IF NOT EXISTS (SELECT 1
+        FROM [dbo].[BulkProcessErrors]
+        WHERE [BatchId] = @BatchId AND [ErrorMessage] LIKE '%Validation Mismatch (960)%')
     BEGIN
-THROW 50204, 'Assertion failed: Expected record count mismatch error (960) to be logged.', 1;
-END;
+        THROW 50204, 'Assertion failed: Expected record count mismatch error (960) to be logged.', 1;
+    END;
 
-IF NOT EXISTS (SELECT 1
-FROM [dbo].[BulkProcessErrors]
-WHERE [BatchId] = @BatchId AND [ErrorMessage] LIKE '%Validation Mismatch (950)%')
+    IF NOT EXISTS (SELECT 1
+        FROM [dbo].[BulkProcessErrors]
+        WHERE [BatchId] = @BatchId AND [ErrorMessage] LIKE '%Validation Mismatch (950)%')
     BEGIN
-THROW 50205, 'Assertion failed: Expected wage sum mismatch error (950) to be logged.', 1;
-END;
+        THROW 50205, 'Assertion failed: Expected wage sum mismatch error (950) to be logged.', 1;
+    END;
 
-IF NOT EXISTS (SELECT 1
-FROM [dbo].[BulkProcessErrors]
-WHERE [BatchId] = @BatchId AND [ErrorMessage] LIKE '%Validation Mismatch (955)%')
+    IF NOT EXISTS (SELECT 1
+        FROM [dbo].[BulkProcessErrors]
+        WHERE [BatchId] = @BatchId AND [ErrorMessage] LIKE '%Validation Mismatch (955)%')
     BEGIN
-THROW 50206, 'Assertion failed: Expected wage balance mismatch error (955) to be logged.', 1;
-END;
+        THROW 50206, 'Assertion failed: Expected wage balance mismatch error (955) to be logged.', 1;
+    END;
 
--- 4. Act: Call the main processing stored procedure to verify rejected records do not migrate
-EXEC [dbo].[ProcessBulkImport]
+    -- 4. Act: Call the main processing stored procedure to verify rejected records do not migrate
+    EXEC [dbo].[ProcessBulkImport]
         @BatchId = @BatchId,
         @TotalProcessed = @ActualProcessed OUTPUT,
         @TotalRejected = @ActualRejected OUTPUT;
 
--- 5. Assert: Verify no records were processed or migrated to production
-IF @ActualProcessed <> 0 OR @ActualRejected <> 0
-    BEGIN
-    -- Note: ProcessBulkImport only processes 'Pending' records; 'Rejected' ones are ignored by design.
-    -- So output stats should be 0 processed.
+    -- 5. Assert: Verify no records were processed and all 4 remain rejected
+    -- ProcessBulkImport only processes 'Pending' records; 'Rejected' ones are ignored by design.
+    -- So @ActualProcessed should be 0, and @ActualRejected should be 4.
     IF @ActualProcessed <> 0
-        BEGIN
-    THROW 50207, 'Assertion failed: Staged Rejected records must not be migrated to production.', 1;
-END;
-END;
-
-SELECT @ProdCount = COUNT(*)
-FROM [dbo].[EmployeeWages]
-WHERE [BatchId] = @BatchId;
-IF @ProdCount <> 0
     BEGIN
-THROW 50208, 'Assertion failed: Expected 0 records in production EmployeeWages table.', 1;
-END;
+        THROW 50207, 'Assertion failed: Staged Rejected records must not be migrated to production.', 1;
+    END;
+
+    IF @ActualRejected <> 4
+    BEGIN
+        THROW 50209, 'Assertion failed: Expected 4 rejected records in output parameter.', 1;
+    END;
+
+    SELECT @ProdCount = COUNT(*)
+    FROM [dbo].[EmployeeWages]
+    WHERE [BatchId] = @BatchId;
+    IF @ProdCount <> 0
+    BEGIN
+        THROW 50208, 'Assertion failed: Expected 0 records in production EmployeeWages table.', 1;
+    END;
 END

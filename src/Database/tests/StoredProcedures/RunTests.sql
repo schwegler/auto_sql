@@ -13,6 +13,7 @@ BEGIN
     DECLARE @testName NVARCHAR(256);
     DECLARE @sql NVARCHAR(MAX);
     DECLARE @success INT = 1;
+    DECLARE @errMsg NVARCHAR(MAX);
 
     -- Query all test stored procedures in the 'tests' schema starting with 'test_'
     DECLARE test_cursor CURSOR FOR
@@ -33,21 +34,22 @@ BEGIN
             -- Run the test procedure
             EXEC sp_executesql @sql;
             
-            -- If we reach here, the test passed
+            -- Rollback changes to keep the database state completely clean
+            ROLLBACK TRANSACTION;
+
+            -- Record pass result AFTER rollback so it persists
             INSERT INTO [tests].[TestResults] (TestName, Status)
             VALUES (@testName, 'PASS');
             PRINT 'PASS: ' + @testName;
-            
-            -- Rollback changes to keep the database state completely clean
-            ROLLBACK TRANSACTION;
         END TRY
         BEGIN CATCH
             -- Rollback any modified data
             ROLLBACK TRANSACTION;
             
             SET @success = 0;
-            DECLARE @errMsg NVARCHAR(MAX) = ERROR_MESSAGE();
+            SET @errMsg = ERROR_MESSAGE();
             
+            -- Record fail result AFTER rollback so it persists
             INSERT INTO [tests].[TestResults] (TestName, Status, ErrorMessage)
             VALUES (@testName, 'FAIL', @errMsg);
             PRINT 'FAIL: ' + @testName + ' - Error: ' + @errMsg;
