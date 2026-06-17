@@ -13,8 +13,8 @@ jobs:
   - job: ValidatePR
     displayName: 'Build and Run Unit Tests on Agent'
     pool:
-      name: 'Default' # Runs on your self-hosted Windows agent to bypass hosted parallelism limits
-      # vmImage: 'windows-latest' # Uncomment if you have purchased or been granted hosted parallelism
+      vmImage: 'windows-latest' # Runs on Microsoft-hosted Windows agent (has LocalDB & SqlPackage pre-installed)
+      # name: 'Default' # Uncomment this and comment out vmImage if you prefer your self-hosted agent pool
     steps:
       - task: UseDotNet@2
         displayName: 'Install .NET SDK'
